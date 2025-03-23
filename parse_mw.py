@@ -145,19 +145,50 @@ def parse_dictionary(input_file):
     current_term = ""
     current_definition = []
     
+    # Define all conjugation fields
+    conjugation_fields = [
+        # Present (lat)
+        'lat_1s', 'lat_2s', 'lat_3s',  # singular
+        'lat_1d', 'lat_2d', 'lat_3d',  # dual
+        'lat_1p', 'lat_2p', 'lat_3p',  # plural
+        # Past (lan)
+        'lan_1s', 'lan_2s', 'lan_3s',  # singular
+        'lan_1d', 'lan_2d', 'lan_3d',  # dual
+        'lan_1p', 'lan_2p', 'lan_3p',  # plural
+        # Future (lrt)
+        'lrt_1s', 'lrt_2s', 'lrt_3s',  # singular
+        'lrt_1d', 'lrt_2d', 'lrt_3d',  # dual
+        'lrt_1p', 'lrt_2p', 'lrt_3p',  # plural
+        # Perfect (lit)
+        'lit_1s', 'lit_2s', 'lit_3s',  # singular
+        'lit_1d', 'lit_2d', 'lit_3d',  # dual
+        'lit_1p', 'lit_2p', 'lit_3p'   # plural
+    ]
+    
     with open(input_file, 'r', encoding='utf-8') as f:
         for line in f:
             if line.startswith('<L>'):
                 if current_term:
                     definition_text = ' '.join(current_definition).strip()
                     definition_text = clean_definition(definition_text)
+                    pos = extract_part_of_speech(definition_text)
                     
+                    # Create base entry
                     entry = {
                         "term": current_term,
                         "definition": definition_text,
-                        "part_of_speech": extract_part_of_speech(definition_text),
+                        "part_of_speech": pos,
                         "gender": extract_gender(definition_text)
                     }
+                    
+                    # Add conjugation fields (empty by default)
+                    for field in conjugation_fields:
+                        entry[field] = ""
+                    
+                    # If it's a verb, try to extract conjugations
+                    if pos == 'verb':
+                        conjugations = extract_conjugations(definition_text)
+                        entry.update(conjugations)
                     
                     dictionary.append(entry)
                     
@@ -227,6 +258,124 @@ def extract_gender(text):
     
     # Join multiple genders with forward slash
     return "/".join(genders) if genders else ""
+
+def extract_conjugations(text):
+    """Extract all conjugation forms from the definition"""
+    conjugations = {
+        # Initialize all conjugation fields to empty strings
+        'lat_1s': "", 'lat_2s': "", 'lat_3s': "",
+        'lat_1d': "", 'lat_2d': "", 'lat_3d': "",
+        'lat_1p': "", 'lat_2p': "", 'lat_3p': "",
+        'lan_1s': "", 'lan_2s': "", 'lan_3s': "",
+        'lan_1d': "", 'lan_2d': "", 'lan_3d': "",
+        'lan_1p': "", 'lan_2p': "", 'lan_3p': "",
+        'lrt_1s': "", 'lrt_2s': "", 'lrt_3s': "",
+        'lrt_1d': "", 'lrt_2d': "", 'lrt_3d': "",
+        'lrt_1p': "", 'lrt_2p': "", 'lrt_3p': "",
+        'lit_1s': "", 'lit_2s': "", 'lit_3s': "",
+        'lit_1d': "", 'lit_2d': "", 'lit_3d': "",
+        'lit_1p': "", 'lit_2p': "", 'lit_3p': ""
+    }
+    
+    # Clean and standardize text
+    text = clean_definition(text)
+    
+    # Patterns for each tense section
+    tense_sections = {
+        'lat': [
+            r'Pres\.\s*(?:Indic\.)?\s*([^;.]+)',
+            r'(?:cl\.\s*\d+\.\s*)?(?:P\.|A\.|Ā\.)\s+([^;.]+)',
+        ],
+        'lan': [
+            r'(?:Imperf\.|laṅ)\s*([^;.]+)',
+            r'(?<=\s)a-[^;.]+',  # Imperfect often starts with 'a-'
+        ],
+        'lrt': [
+            r'(?:Fut\.|lṛṭ)\s*([^;.]+)',
+            r'\b\w+iṣyati\b[^;.]*',  # Future forms often end in iṣyati
+        ],
+        'lit': [
+            r'(?:Perf\.|liṭ)\s*([^;.]+)',
+            r'(?<=\s)(?:[\w-]+āṃ\s+(?:cakāra|āsa|babhūva))[^;.]*'  # Perfect forms
+        ]
+    }
+    
+    # Extract each tense section
+    for tense, patterns in tense_sections.items():
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                tense_text = match.group(1) if match.groups() else match.group(0)
+                forms = extract_forms_from_tense(tense_text, tense)
+                conjugations.update(forms)
+                break  # Stop after first match for this tense
+    
+    return conjugations
+
+def extract_forms_from_tense(text, tense):
+    """Extract individual conjugation forms from a tense block"""
+    forms = {}
+    
+    # Endings and pronouns for each person-number combination
+    person_markers = {
+        # Format: (ending pattern, optional pronoun)
+        '1s': (r'(?:āmi|ami)\b', r'aham'),
+        '2s': (r'(?:asi|si)\b', r'tvam'),
+        '3s': (r'(?:ati|ti)\b', r'saḥ'),
+        '1d': (r'(?:āvaḥ|vaḥ)\b', r'āvām'),
+        '2d': (r'(?:athaḥ|thaḥ)\b', r'yuvām'),
+        '3d': (r'(?:ataḥ|taḥ)\b', r'tau'),
+        '1p': (r'(?:āmaḥ|maḥ)\b', r'vayam'),
+        '2p': (r'(?:atha|tha)\b', r'yūyam'),
+        '3p': (r'(?:anti|ati)\b', r'te')
+    }
+    
+    # Special patterns for different tenses
+    tense_specific = {
+        'lan': {
+            'prefix': r'a',  # Imperfect prefix
+            'modifications': {'ati': 'at', 'anti': 'an'}  # Ending modifications
+        },
+        'lrt': {
+            'infix': r'iṣy',  # Future infix
+            'modifications': {}
+        },
+        'lit': {
+            'reduplications': True,  # Perfect uses reduplication
+            'modifications': {'ati': 'a', 'anti': 'uḥ'}
+        }
+    }
+    
+    # Look for each person-number combination
+    for person, (ending, pronoun) in person_markers.items():
+        form_key = f"{tense}_{person}"
+        
+        # Build pattern based on tense
+        if tense in tense_specific:
+            spec = tense_specific[tense]
+            if 'prefix' in spec:
+                pattern = fr'\b{spec["prefix"]}(\w+{ending})\b'
+            elif 'infix' in spec:
+                pattern = fr'\b(\w+{spec["infix"]}{ending})\b'
+            else:
+                pattern = fr'\b(\w+{ending})\b'
+        else:
+            pattern = fr'\b(\w+{ending})\b'
+        
+        # Try to find the form
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            forms[form_key] = match.group(1)
+        else:
+            # Try alternative pattern with pronoun if available
+            alt_pattern = fr'{pronoun}\s+(\w+)\b'
+            match = re.search(alt_pattern, text, re.IGNORECASE)
+            if match:
+                forms[form_key] = match.group(1)
+            else:
+                forms[form_key] = ""
+    
+    return forms
 
 def main():
     # Get the current directory
