@@ -177,13 +177,13 @@ def parse_dictionary(input_file):
                     entry = {
                         "term": current_term,
                         "definition": definition_text,
-                        "part_of_speech": pos,
+                        "partOfSpeech": pos,
                         "gender": extract_gender(definition_text)
                     }
                     
                     # Add conjugation fields (empty by default)
                     for field in conjugation_fields:
-                        entry[field] = ""
+                        entry[field] = None
                     
                     # If it's a verb, try to extract conjugations
                     if pos == 'verb':
@@ -212,7 +212,7 @@ def parse_dictionary(input_file):
         dictionary.append({
             "term": current_term,
             "definition": definition_text,
-            "part_of_speech": extract_part_of_speech(definition_text),
+            "partOfSpeech": extract_part_of_speech(definition_text),
             "gender": extract_gender(definition_text)
         })
 
